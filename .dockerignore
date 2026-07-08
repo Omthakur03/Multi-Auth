@@ -1,0 +1,43 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+.npm/
+
+# Local keys generated during setup
+keys/private.key
+keys/public.key
+keys/private_env.txt
+keys/public_env.txt
+
+# Local environment files and databases
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+
+# Logs and diagnostic reports
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Git configuration
+.git/
+.gitignore
+
+# Docker config
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Build and IDE files
+.vscode/
+.idea/
+dist/
+build/
+README.md
+KEYS_SETUP.md
+LICENSE
