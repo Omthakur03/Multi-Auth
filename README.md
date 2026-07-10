@@ -1,138 +1,98 @@
-# 🔐 Auth Service + HRM App (Microservices Architecture)
+# 🔐 Auth Service (Centralized Authentication & Token Management)
 
-A **centralized authentication system** with a separate **HRM application**, demonstrating how multiple apps can share a single authentication service while maintaining independent databases and business logic.
+A production-ready **centralized authentication microservice** designed to handle user authentication, client-app validation, and secure token issuance/rotation for multiple consumer applications (e.g., HRM, CRM, etc.). 
 
-**Architecture:** Auth Service handles all authentication → HRM (and future apps like CRM) verify tokens locally and manage their own data.
+**Production Endpoint:** `https://auth.mzsk.fun`
+
+By using asymmetric encryption (RSA-256) and JSON Web Encryption (JWE), this service allows client applications to verify access tokens locally without making continuous network requests back to the Auth Service.
 
 ---
 
 ## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────┐
-│   Auth Service      │  ← Handles signup, login, refresh, logout
-│   Port: 5000        │  ← Stores users, passwords, refresh tokens
-└──────────┬──────────┘
-           │
-           │ JWT tokens (encrypted + signed)
-           │
-    ┌──────┴──────┬─────────────┐
-    │             │             │
-┌───▼────┐   ┌───▼────┐   ┌───▼────┐
-│  HRM   │   │  CRM   │   │ Future │
-│ :5001  │   │ :5002  │   │  Apps  │
-└────────┘   └────────┘   └────────┘
-     │            │            │
-  HRM DB       CRM DB      Other DBs
+┌─────────────────────────────────┐
+│          Auth Service           │  ← Handles signup, login, refresh, logout
+│           (Port: 5000)          │  ← Stores users, clients, refresh tokens
+└────────────────┬────────────────┘
+                 │
+                 │ Asymmetric JWT tokens (RSA-256 + JWE)
+                 │
+     ┌───────────┴───────────┐
+     │                       │
+┌────▼────┐             ┌────▼────┐
+│ HRM App │             │ CRM App │  ← Client apps verify tokens locally
+│  :5001  │             │  :5002  │  ← and manage their own databases
+└─────────┘             └─────────┘
 ```
 
-**Key Points:**
-- One Auth Service, multiple apps
-- Each app has its own database
-- Tokens verified locally (no constant Auth Service calls)
-- Just-in-time user provisioning
+### Key Highlights:
+* **Single Sign-On (SSO) Foundation:** A single auth source registers users and issues tokens scoped to registered client applications.
+* **Local Verification:** Consumer apps decrypt and verify tokens using a shared public key locally (zero HTTP overhead for authentication checks).
+* **Token Rotation & Security:** Access tokens have a short lifespan (e.g., 15 minutes) and are paired with a rotated, secure refresh token (stored in `httpOnly` cookies).
+* **Just-In-Time Provisioning:** Client apps auto-create local profiles for verified users on their first access.
 
 ---
 
 ## 🚀 Tech Stack
 
-- **Node.js + Express** – Backend framework
-- **PostgreSQL** – Relational database (separate DB per service)
-- **Prisma ORM** – Type-safe database access
-- **JWT (RSA-256 + JWE encryption)** – Authentication tokens
-- **httpOnly Cookies** – Secure token storage
-- **bcryptjs** – Password hashing
-- **jose** – JWT signing and encryption
-
----
-
-## ✨ Features
-
-### Auth Service
-- User registration with client validation
-- Secure login with encrypted JWT tokens
-- Refresh token rotation
-- Token verification endpoint
-- Logout with token revocation
-- Client management (HRM, CRM apps registered as clients)
-
-### HRM App
-- JWT verification middleware (local, no network calls)
-- Just-in-time user provisioning
-- User-specific salary management (CRUD)
-- Auto token refresh on expiry
-- Independent business logic and database
+* **Runtime:** Node.js (v20+)
+* **Framework:** Express (v5)
+* **Database:** PostgreSQL (v15)
+* **ORM:** Prisma
+* **Security & Tokens:** `jose` (JWE/JWT), `bcryptjs`, `cookie-parser`, `helmet`, `xss`
+* **Testing:** Node.js Native Test Runner
+* **Containerization:** Docker & Docker Compose
+* **CI/CD:** Jenkins Pipeline
 
 ---
 
 ## 📁 Project Structure
 
-### Auth Service
+This repository contains the standalone **Auth Service** implementation:
+
 ```
-authService/
-├── config/
+Multi-Auth/
+├── config/                  # Server, Database, and Prisma configuration
 │   ├── config.js
 │   ├── db.js
 │   └── prisma.js
-├── controllers/
+├── controllers/             # Authentication endpoint handlers
 │   └── auth.controller.js
-├── middlewares/
-│   ├── errorHandler.js
-│   ├── validateClient.js
-│   └── ...
-├── repositories/
-│   ├── user.repository.js
+├── middlewares/             # Request interceptors
+│   ├── catchAsync.js        # Global async error wrapper
+│   ├── errorHandler.js      # Global JSON error responses
+│   ├── sanitization.js      # Input sanitization
+│   ├── validateClient.js    # Client-application ID/secret verification
+│   └── validator.js         # Joi schema validator
+├── prisma/                  # Database schema & migrations
+│   ├── migrations/
+│   └── schema.prisma
+├── repositories/            # Direct database queries (Prisma)
 │   ├── client.repository.js
-│   └── refreshToken.repository.js
-├── services/
-│   └── auth.service.js
-├── routes/
+│   ├── refreshToken.repository.js
+│   └── user.repository.js
+├── routes/                  # API endpoints definition
 │   ├── auth.routes.js
 │   └── index.routes.js
-├── scripts/
-│   ├── setup-keys.js
-│   └── seed-clients.js
-├── keys/                    # JWT keys (gitignored)
-├── prisma/
-│   └── schema.prisma
-├── utils/
+├── scripts/                 # Key generator and database seeding scripts
+│   ├── seed-clients.js
+│   └── setup-keys.js
+├── services/                # Authentication business logic
+│   └── auth.service.js
+├── tests/                   # Native Node.js unit tests
+│   ├── jwt.utils.test.js
+│   └── responseHandler.test.js
+├── utils/                   # Helpers (JWT generation, response structures)
 │   ├── jwt.utils.js
 │   └── responseHandler.js
-├── validations/
+├── validations/             # Joi input validation schemas
 │   └── auth.validation.js
-└── server.js
-```
-
-### HRM App
-```
-HRM_AuthApp/
-├── config/
-│   ├── config.js
-│   ├── db.js
-│   └── prisma.js
-├── controllers/
-│   ├── auth.controller.js
-│   └── salary.controller.js
-├── middlewares/
-│   ├── auth.middleware.js   # Token verification
-│   └── errorHandler.js
-├── repositories/
-│   ├── user.repository.js
-│   └── salary.repository.js
-├── services/
-│   ├── auth.service.js
-│   └── salary.service.js
-├── routes/
-│   ├── auth.routes.js
-│   ├── salary.routes.js
-│   └── index.routes.js
-├── keys/                    # Same JWT keys as Auth Service
-├── prisma/
-│   └── schema.prisma
-├── utils/
-│   ├── jwt.utils.js         # Verify only, no signing
-│   └── responseHandler.js
-└── server.js
+├── Dockerfile               # Node.js service containerization instructions
+├── docker-compose.yml       # Orchestrates the service and PostgreSQL DB
+├── Jenkinsfile              # Declarative CI/CD pipeline
+├── server.js                # Application entrypoint
+└── KEYS_SETUP.md            # Details on RSA key setup
 ```
 
 ---
@@ -140,408 +100,154 @@ HRM_AuthApp/
 ## 🔧 Setup Instructions
 
 ### Prerequisites
-- Node.js (v18+)
-- PostgreSQL
-- npm or yarn
+* **Node.js** (v20+)
+* **PostgreSQL** (v15+)
+* **Docker / Docker Compose** (Optional, for containerized run)
 
 ---
 
-### 1️⃣ Clone the Repository
+### 1️⃣ Local Development (Native Node)
 
+#### A. Install Dependencies
 ```bash
-git clone https://github.com/rohan-serviots/Multi-Auth.git
-cd Multi-Auth
+npm install
 ```
 
----
-
-### 2️⃣ Setup Auth Service
-
-#### Generate JWT Keys
-
+#### B. Generate RSA Keys
+Run the helper script to generate the required 2048-bit RSA key pair:
 ```bash
-cd Multi-Auth
-npm install
 npm run setup-keys
 ```
+This generates files under `/keys`:
+* `private.key` & `public.key`: Raw key files.
+* `private_env.txt` & `public_env.txt`: Single-line environment-safe key strings.
 
-This generates RSA key pairs:
-```
-keys/private.key
-keys/public.key
-keys/private_env.txt
-keys/public_env.txt
-```
+> [!WARNING]
+> Never commit the `/keys` directory to Git. It is automatically gitignored.
 
-⚠️ **Never commit `keys/` folder** (already in `.gitignore`)
+#### C. Configure Environment Variables
+1. Copy the template `.env.example` file:
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and fill in the values:
+   * Paste the single-line private key from `keys/private_env.txt` into `JWT_PRIVATE_KEY`.
+   * Paste the single-line public key from `keys/public_env.txt` into `JWT_PUBLIC_KEY`.
+   * Update the `DATABASE_URL` with your PostgreSQL database credentials.
 
----
-
-#### Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and paste the key values from `keys/*_env.txt`:
-
-```env
-PORT=5000
-NODE_ENV=development
-DOMAIN=http://localhost
-
-DATABASE_URL=postgresql://user:password@localhost:5432/auth_service
-
-JWT_PRIVATE_KEY=<paste from keys/private_env.txt>
-JWT_PUBLIC_KEY=<paste from keys/public_env.txt>
-JWT_ACCESS_TOKEN_EXPIRE=900        # 15 minutes
-JWT_REFRESH_TOKEN_EXPIRE=604800    # 7 days
-
-# Client credentials (set these before seeding)
-HRM_CLIENT_ID=hrm-app
-HRM_CLIENT_SECRET=hrm-super-secret-key-change-in-production
-CRM_CLIENT_ID=crm-app
-CRM_CLIENT_SECRET=crm-super-secret-key-change-in-production
-
-COOKIE_DOMAIN=                      # Empty for localhost, .yourcompany.com for production
-```
-
----
-
-#### Setup Database
-
-Create PostgreSQL database:
+#### D. Setup Database & Migrations
+Ensure PostgreSQL is running, then create the database:
 ```sql
 CREATE DATABASE auth_service;
 ```
-
-Run migrations:
+Run Prisma migrations and generate client types:
 ```bash
-npx prisma migrate dev
-npx prisma generate
+npm run migrate
+npm run prisma:generate
 ```
 
----
-
-#### Seed Clients
-
+#### E. Seed Client Credentials
+To authorize consumer applications (like the HRM app), seed their client configurations into the database:
 ```bash
 npm run seed:clients
 ```
 
-This creates HRM and CRM as registered clients in the Auth DB.
-
----
-
-#### Start Auth Service
-
+#### F. Run the Application
+Start the development server:
 ```bash
 npm run dev
 ```
-
-Auth Service runs at: **http://localhost:5000** (or http://127.0.0.1:5000)
-
----
-
-### 3️⃣ Setup HRM App
-
-#### Copy JWT Keys
-
-**Important:** HRM needs the **same keys** as Auth Service.
-
-```bash
-cd ../Multi-Auth-Archtecture
-mkdir keys
-cp ../Multi-Auth-Archtecture/keys/* ./keys/
-```
+The Auth Service runs at: **http://localhost:5000** (or http://127.0.0.1:5000)
 
 ---
 
-#### Install Dependencies
+### 2️⃣ Containerized Setup (Docker Compose)
 
-```bash
-npm install
-```
+You can run the application and its PostgreSQL database inside Docker containers.
 
----
-
-#### Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```env
-PORT=5001
-NODE_ENV=development
-DOMAIN=http://localhost
-
-DATABASE_URL=postgresql://user:password@localhost:5432/hrm_db
-
-# Auth Service connection
-AUTH_SERVICE_URL=http://localhost:5000
-CLIENT_ID=hrm-app
-CLIENT_SECRET=hrm-super-secret-key-change-in-production
-
-# JWT keys (same as Auth Service)
-JWT_PRIVATE_KEY=<paste from keys/private_env.txt>
-JWT_PUBLIC_KEY=<paste from keys/public_env.txt>
-
-COOKIE_DOMAIN=                      # Empty for localhost
-```
+1. Ensure the key generation step (Step B above) has been completed.
+2. Ensure you have copied and configured your `.env` file (Step C above).
+3. Run the following command:
+   ```bash
+   docker-compose up --build
+   ```
+This commands spins up:
+* A `db` service running PostgreSQL on port `5432`.
+* An `app` service running the Auth Service application on port `5000`.
 
 ---
 
-#### Setup Database
+## 🧪 Running Unit Tests
 
-Create PostgreSQL database:
-```sql
-CREATE DATABASE hrm_db;
-```
+This project uses the native Node.js test runner for unit tests. Tests are located in the `/tests` directory.
 
-Run migrations:
+To run the test suite locally:
 ```bash
-npx prisma migrate dev
-npx prisma generate
+node --test
 ```
+*(If PowerShell execution policies allow, you can also run `npm test`)*
 
 ---
 
-#### Start HRM App
+## ⚙️ CI/CD Pipeline (Jenkins)
 
-```bash
-npm run dev
-```
+The repository includes a declarative `Jenkinsfile` configuring an automated build and deploy pipeline. The pipeline executes the following stages:
 
-HRM runs at: **http://localhost:5001** (or http://127.0.0.1:5001)
+1. **Pull Repository:** Checks out the latest source code from Git.
+2. **Run Tests:** Runs the test suite in an isolated, lightweight `node:20-alpine` Docker container (`npm test`).
+3. **Build Docker Image:** Builds the Docker container image, tagging it as `omthakur03/auth-service:latest` and `omthakur03/auth-service:<build_number>`.
+4. **Push to Docker Hub:** Signs into Docker Hub using stored Jenkins credentials (`Docker-ID`) and pushes the built image.
+5. **Deploy Container:** Performs a rolling update on the target EC2 host, removing any existing container and spawning the newly-built container with the production configurations.
+6. **Cleanup:** Removes temporary builds and images from the host to prevent storage exhaustion.
 
 ---
 
 ## 📚 API Endpoints
 
-### Auth Service (Port 5000)
+All Auth Service routes require the custom HTTP headers `x-client-id` and `x-client-secret` for client registration verification (except refresh, logout, and verify which utilize secure cookies).
 
-| Method | Endpoint | Headers Required | Description |
-|--------|----------|------------------|-------------|
-| POST | `/auth/signup` | `x-client-id`, `x-client-secret` | Register new user |
-| POST | `/auth/login` | `x-client-id`, `x-client-secret` | Login user |
-| GET | `/auth/verify` | Cookie | Verify access token |
-| POST | `/auth/refresh` | Cookie | Refresh tokens |
-| POST | `/auth/logout` | Cookie | Logout user |
-
-### HRM App (Port 5001)
-
-| Method | Endpoint | Protected | Description |
-|--------|----------|-----------|-------------|
-| GET | `/auth/me` | ✅ | Get current user (auto-provision) |
-| POST | `/auth/logout` | ✅ | Logout from HRM |
-| GET | `/salaries` | ✅ | Get user's salary records |
-| POST | `/salaries` | ✅ | Create salary record |
-| GET | `/salaries/:id` | ✅ | Get single salary record |
-| PUT | `/salaries/:id` | ✅ | Update salary record |
-| DELETE | `/salaries/:id` | ✅ | Delete salary record |
+| Method | Endpoint | Required Headers / Cookies | Description |
+|:---|:---|:---|:---|
+| **POST** | `/auth/signup` | Headers: `x-client-id`, `x-client-secret` | Register a new user profile |
+| **POST** | `/auth/login` | Headers: `x-client-id`, `x-client-secret` | Login user, issues access & refresh token cookies |
+| **GET** | `/auth/verify` | Cookie: `accessToken` | Decrypt and verify access token validity |
+| **POST** | `/auth/refresh` | Cookie: `refreshToken` | Validate and rotate tokens without prompting re-login |
+| **POST** | `/auth/logout` | Cookie: `refreshToken` | Invalidate and revoke the active user session |
+| **GET** | `/` | *None* | Basic health check endpoint |
 
 ---
 
-## 🔐 Authentication Flow
+## 🔐 Security Standards Implemented
 
-### Registration & Login
-```
-1. User registers at Auth Service
-   → Auth DB stores user + hashed password
-
-2. User logs in at Auth Service
-   → Access token (15 min) + Refresh token (7 days) set as cookies
-   → Tokens contain: userId, clientId, name, email, isActive
-
-3. User accesses HRM
-   → HRM verifies token locally (no Auth Service call)
-   → Checks if user exists in HRM DB
-   → If not, creates user (just-in-time provisioning)
-   → Returns HRM-specific data
-```
-
-### Token Verification (Every Request)
-```
-User hits protected route in HRM
-→ Middleware extracts token from cookie
-→ Decrypts using private key (local)
-→ Verifies signature using public key (local)
-→ Checks expiry, clientId, isActive
-→ All checks pass → request proceeds
-→ Any check fails → 401 Unauthorized
-```
-
-### Auto Token Refresh
-```
-Access token expires after 15 minutes
-→ HRM middleware catches expiry error
-→ Automatically calls Auth Service /refresh
-→ Auth Service validates refresh token
-→ Checks user still active in DB
-→ Issues new tokens
-→ HRM retries original request
-→ User never notices
-```
+* **RSA-256 JWT Signing:** Access tokens are signed using a private key and validated with a public key.
+* **JWE Token Encryption:** Access token payloads are encrypted, rendering them unreadable to clients and attackers sniffing network traffic.
+* **httpOnly & Secure Cookies:** Access and refresh tokens are stored in the browser's cookie jar, protected from XSS scripts.
+* **CSRF & Cors Protection:** Cors origin checks and SameSite options restrict unwanted cross-origin access.
+* **Input Sanitization:** Uses `xss` and `Joi` validations to avoid script injections.
 
 ---
 
-## 🧪 Testing Flow (Postman)
+## 💡 Client Integration Reference (e.g., HRM App)
 
-**Important:** Use `127.0.0.1` consistently (not `localhost`) for cookies to work.
+To integrate a client application (such as the HRM App) with this Auth Service:
 
-### 1. Register
-```
-POST http://127.0.0.1:5000/auth/signup
-
-Headers:
-  x-client-id: hrm-app
-  x-client-secret: hrm-super-secret-key-change-in-production
-
-Body:
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "Test@1234"
-}
-```
-
-### 2. Login
-```
-POST http://127.0.0.1:5000/auth/login
-
-Headers:
-  x-client-id: hrm-app
-  x-client-secret: hrm-super-secret-key-change-in-production
-
-Body:
-{
-  "email": "john@example.com",
-  "password": "Test@1234"
-}
-
-→ Cookies set automatically
-```
-
-### 3. Access HRM (First Time)
-```
-GET http://127.0.0.1:5001/auth/me
-
-→ User auto-created in HRM DB
-→ Returns HRM profile
-```
-
-### 4. Create Salary Record
-```
-POST http://127.0.0.1:5001/salaries
-
-Body:
-{
-  "amount": 75000,
-  "currency": "USD",
-  "effectiveDate": "2024-01-01",
-  "notes": "Annual salary 2024"
-}
-```
-
-### 5. Get Salaries
-```
-GET http://127.0.0.1:5001/salaries
-
-→ Returns all salary records for logged-in user
-```
-
----
-
-## 🔒 Security Features
-
-- **RSA-256 JWT signing** – Asymmetric encryption
-- **JWE encryption** – Tokens are encrypted, not just signed
-- **httpOnly cookies** – Protected from XSS attacks
-- **Client authentication** – Only registered apps can use Auth Service
-- **Token payload validation** – clientId, isActive checked on every request
-- **Refresh token rotation** – Old token revoked when new one issued
-- **Password hashing** – bcrypt with salt rounds
-- **User ownership enforcement** – Users can only access their own data
-
----
-
-## 🛡️ Database Design
-
-### Auth Service DB
-```
-Users           → id, email, password (hashed), isActive, isDeleted
-Clients         → clientId, clientName, clientSecret (hashed), isActive
-RefreshTokens   → token (hashed), userId, clientId, device, ip, expiresAt, isRevoked
-```
-
-### HRM DB
-```
-Users     → id, userId (from Auth), name, email, role, isActive
-Employees → id, userId, position, department, joiningDate
-Salaries  → id, userId, amount, currency, effectiveDate, notes
-```
-
-**Key Point:** `userId` is the common thread across all databases, but databases never directly connect to each other.
-
----
-
-## 📝 Important Notes
-
-### For Development (localhost)
-- Use `127.0.0.1` consistently in all requests
-- `COOKIE_DOMAIN` should be empty
-- Cookies won't share across different ports in localhost (expected behavior)
-
-### For Production
-- Set `COOKIE_DOMAIN=.yourcompany.com` in both services
-- Use proper subdomains: `auth.yourcompany.com`, `hrm.yourcompany.com`
-- Cookies will automatically share across all subdomains
-- Set `NODE_ENV=production`
-- Use strong client secrets
-- Enable HTTPS (`secure: true` in cookie options)
-
-### Adding New Apps (e.g., CRM)
-1. Add client to Auth Service `.env`
-2. Run `npm run seed:clients`
-3. Clone HRM structure
-4. Update `CLIENT_ID` and `CLIENT_SECRET` in new app's `.env`
-5. Copy same JWT keys
-6. Create new database
-7. Build app-specific business logic
+1. **Register the Client:** Seed client credentials in the Auth Service (`HRM_CLIENT_ID` and `HRM_CLIENT_SECRET`).
+2. **Key Sharing:** Copy the generated `keys/public.key` to the client app's `keys/` directory (needed to verify signatures).
+3. **Configure client `.env`:**
+   ```env
+   PORT=5001
+   DATABASE_URL=postgresql://user:password@localhost:5432/hrm_db
+   AUTH_SERVICE_URL=https://auth.mzsk.fun
+   CLIENT_ID=hrm-app
+   CLIENT_SECRET=hrm-super-secret-key-change-in-production
+   JWT_PUBLIC_KEY=<paste from keys/public_env.txt>
+   ```
+4. **Local Middleware:** When a request is received on a protected client route, extract the token cookie, decrypt it locally using `JWT_PUBLIC_KEY`, check expiration, and provision the user locally if they don't already exist in the local client database.
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Cookies not working
-- Ensure you're using `127.0.0.1` (not `localhost`) consistently
-- Check Postman cookie jar is enabled
-- Verify cookies exist for the correct domain
-
-### JWT errors
-- Ensure keys were generated using `npm run setup-keys`
-- Verify both Auth and HRM have **identical** keys
-- Check no extra quotes or spaces in `.env` values
-
-### Token verification fails
-- Check `CLIENT_ID` in HRM matches what's in the token payload
-- Verify user `isActive = true` in Auth DB
-- Ensure token hasn't expired (check timestamps)
-
-### Database connection errors
-- Verify PostgreSQL is running
-- Check `DATABASE_URL` format is correct
-- Ensure databases exist (`auth_service`, `hrm_db`)
-
----
-
-## 📌 License
-
-MIT License
-
----
-
-⭐ **Star the repo if you found it useful!**
+* **Prisma Client Issues:** If you make changes to `prisma/schema.prisma`, run `npx prisma generate` to rebuild the types.
+* **Key Mismatch:** If token decryption fails in client apps, verify they are using the exact same public key generated by the Auth Service.
+* **Docker DB Connection Refused:** Make sure the database healthcheck is running. If you are using Docker Compose, the application container will wait for the postgres container to be healthy before starting.
