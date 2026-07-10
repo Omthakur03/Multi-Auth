@@ -14,6 +14,15 @@ pipeline {
             }
         }
 
+        stage('Run Tests') {
+            steps {
+                script {
+                    echo "Running unit tests inside Node container..."
+                    sh "docker run --rm -v \$(pwd):/app -w /app node:20-alpine sh -c 'npm ci && npm test'"
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 script {
